@@ -12,7 +12,7 @@ class SseService(
 //    private val emitterList = ConcurrentHashMap<String, MutableMap<String, SseEmitter>>()
     private val emitterList = ConcurrentHashMap<String, SseEmitter>()
     fun createEmitter(concertId: String, waitingId: String): SseEmitter {
-        val emitter = SseEmitter(10000L)
+        val emitter = SseEmitter(10000L * 60 * 60)
 //        this.emitterList[concertId] = mutableMapOf(waitingId to emitter)
         this.emitterList[waitingId] = emitter
         emitter.onTimeout {
@@ -34,8 +34,10 @@ class SseService(
                 ?: -2
             when (num) {
                 -2L -> {
-                    if (redisService.checkInQueue(emitter.key)) {
+                    if (redisService.isValueInSortedSet("working",emitter.key)) {
                         num = -1L
+                        emitter.value.complete()
+                        emitterList.remove(emitter.key)
                     }
                 }
             }
@@ -44,6 +46,7 @@ class SseService(
             }catch (e: Exception) {
                 println("익쩹쪈!")
                 emitter.value.completeWithError(e)
+                emitterList.remove(emitter.key)
             }
         }
     }

@@ -19,6 +19,17 @@ class RedisService(
         zSetOps.add(queueName, value, score)
     }
 
+    fun pop(queueName: String): String? {
+        val range = zSetOps.range(queueName, 0, 0)
+        val firstElement = range?.firstOrNull()
+
+        if (firstElement != null) {
+            zSetOps.remove(queueName, firstElement)
+        }
+
+        return firstElement
+    }
+
     fun getRank(queueName: String, value: String): Long? {
         return zSetOps.rank(queueName, value)
     }
@@ -28,7 +39,17 @@ class RedisService(
         return zSetOps.score(key, value)
     }
 
-    fun checkInQueue(key: String): Boolean {
-        return redisTemplate.hasKey(key)
+    fun isValueInSortedSet(key: String, value: String): Boolean {
+        val rank = zSetOps.rank(key, value)
+
+        return rank != null
+    }
+
+//    fun checkInQueue(key: String): Boolean {
+//        return redisTemplate.hasKey(key)
+//    }
+
+    fun sizeOfWorkingQueue(key: String): Long?{
+        return zSetOps.zCard(key)
     }
 }
