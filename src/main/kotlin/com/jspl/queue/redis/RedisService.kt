@@ -21,11 +21,9 @@ class RedisService(
 
     fun pop(queueName: String): String? {
         val range = zSetOps.range(queueName, 0, 0)
-        val firstElement = range?.firstOrNull()
+        val firstElement = range?.firstOrNull() ?: return null
 
-        if (firstElement != null) {
-            zSetOps.remove(queueName, firstElement)
-        }
+        zSetOps.remove(queueName, firstElement)
 
         return firstElement
     }
@@ -49,7 +47,7 @@ class RedisService(
 //        return redisTemplate.hasKey(key)
 //    }
 
-    fun sizeOfWorkingQueue(key: String): Long?{
+    fun sizeOfWorkingQueue(key: String): Long? {
         return zSetOps.zCard(key)
     }
 }

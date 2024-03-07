@@ -10,16 +10,24 @@ class TicketService(
     private val redisService: RedisService,
     private val sseService: SseService
 ) {
-    fun test(concertId: Long, memberId: Long): SseEmitter{
+    fun waitingEnqueue(performanceId: String, memberId: String): SseEmitter{
         println("Im in Service!")
         val score:Double = System.currentTimeMillis().toDouble()
-        redisService.enqueue("콘서트1", memberId.toString(), score)
-        return sseService.createEmitter(concertId.toString(), memberId.toString())
+        redisService.enqueue(performanceId, memberId, score)
+        var result: SseEmitter
+        try {
+            result = sseService.createEmitter(performanceId, memberId)
+        } catch (e: Exception) {
+            println("익쪠ㅃ쪠뼤쪠뼤쪈")
+            result = SseEmitter(100000)
+            result.send("EXCEPTION!")
+        }
+        return result
     }
 
-    @Scheduled(fixedRate = 5000)
-    fun pushNotifications() {
-        sseService.pushEventToAll()
-    }
+//    @Scheduled(fixedRate = 5000)
+//    fun pushNotifications() {
+//        sseService.pushEventToAll()
+//    }
 
 }
