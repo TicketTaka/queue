@@ -1,53 +1,64 @@
 package com.jspl.queue.redis
 
-import org.springframework.data.redis.core.ListOperations
-import org.springframework.data.redis.core.RedisTemplate
-import org.springframework.data.redis.core.ZSetOperations
+import com.jspl.queue.MaxValue
+import com.jspl.queue.Prefix
+import org.redisson.api.RLock
+import org.redisson.api.RScoredSortedSet
+import org.redisson.api.RedissonClient
 import org.springframework.stereotype.Service
+import java.util.concurrent.TimeUnit
 
 @Service
 class RedisService(
-    private val redisTemplate: RedisTemplate<String, String>,
+    private val redissonClient: RedissonClient,
 ) {
-//    private lateinit var zSetOps: ZSetOperations<String, String>
-
-    private val zSetOps: ZSetOperations<String, String> = redisTemplate.opsForZSet()
-
-    private val listOps: ListOperations<String, String> = redisTemplate.opsForList()
-
-    fun enqueue(queueName: String, value: String, score: Double) {
-        zSetOps.add(queueName, value, score)
+    fun dequeue(key: String, value: String) {
+        val queue = getQueue(Prefix.stringWithPrefix(Prefix.WAITING, key))
+        queue.removeRangeByRank(0, 0)
+        getQueue(Prefix.stringWithPrefix(Prefix.PROCESS, key)).add(1.0, value)
     }
 
-    fun pop(queueName: String): String? {
-        val range = zSetOps.range(queueName, 0, 0)
-        val firstElement = range?.firstOrNull() ?: return null
-
-        zSetOps.remove(queueName, firstElement)
-
-        return firstElement
+    fun contains(key: String, value: String): Boolean {
+        return this.getQueue(key).contains(value)
     }
 
-    fun getRank(queueName: String, value: String): Long? {
-        return zSetOps.rank(queueName, value)
+    fun getRank(key: String, value: String): Int?{
+        return this.getQueue(key).rank(value)
+    }
+    fun getQueue(key: String): RScoredSortedSet<String> {
+        return redissonClient.getScoredSortedSet(key)
     }
 
+    fun executeWithLock(performanceId: String, memberId: String) {
+        val score: Double = System.currentTimeMillis().toDouble()
+        val lock: RLock = redissonClient.getLock(Prefix.stringWithPrefix(Prefix.LOCK, performanceId))
+        try {
+            val available = lock.tryLock(10, 5, TimeUnit.SECONDS)
+            if (available) {
 
-    fun getScoreFromSortedSet(key: String, value: String): Double? {
-        return zSetOps.score(key, value)
+                this.enqueue(performanceId, memberId, score)
+
+            } else {
+                throw Exception()
+            }
+        } catch (e: InterruptedException) {
+            e.printStackTrace()
+        } finally {
+            if (lock.isHeldByCurrentThread) {
+                lock.unlock()
+            }
+        }
     }
 
-    fun isValueInSortedSet(key: String, value: String): Boolean {
-        val rank = zSetOps.rank(key, value)
-
-        return rank != null
-    }
-
-//    fun checkInQueue(key: String): Boolean {
-//        return redisTemplate.hasKey(key)
-//    }
-
-    fun sizeOfWorkingQueue(key: String): Long? {
-        return zSetOps.zCard(key)
+    private fun enqueue(performanceId: String, memberId: String, score: Double){
+        val processQueue = this.getQueue(Prefix.stringWithPrefix(Prefix.PROCESS, performanceId))
+        if (processQueue.size().toLong() >= MaxValue.PROCESS_QUEUE_MAX_SIZE.value) {
+            val waitingQueue = this.getQueue(Prefix.stringWithPrefix(Prefix.WAITING, performanceId))
+            if (!waitingQueue.contains(memberId)) {
+                waitingQueue.add(score, memberId)
+            }
+        } else {
+            processQueue.add(score, memberId)
+        }
     }
 }
