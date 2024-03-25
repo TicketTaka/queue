@@ -1,0 +1,49 @@
+name: ci-cd
+
+on:
+  pull_request:
+    types: [ closed ]
+    branches: [ "dev" ]
+
+jobs:
+  buid:
+
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'dev'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.QUEUE_DOCKER_USER }}
+          password: ${{ secrets.QUEUE_PASSWORD }}
+
+      - name: Set Yaml
+        uses: microsoft/variable-substitution@v1
+        with:
+          files: ./src/main/resources/application.yml
+        env:
+          spring.data.redis.host: ${{ secrets.REDIS_EC2_IP }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.QUEUE_DOCKER_HUB_REPO }}
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.QUEUE_EC2 }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_PEM_KEY }}
+          script: |
+            echo "${{ secrets.QUEUE_PASSWORD }}" | sudo docker login -u ${{ secrets.QUEUE_DOCKER_USER }} --password-stdin
+            sudo docker stop queue || true
+            sudo docker rm queue || true
+            sudo docker rmi -f ${{ secrets.QUEUE_DOCKER_HUB_REPO }} || true
+            sudo docker run -d -p 8080:8080 --name queue ${{ secrets.QUEUE_DOCKER_HUB_REPO }}

@@ -1,4 +1,5 @@
 spring:
-  profiles:
-    include:
-      - secret
+  data:
+    redis:
+      host: ${ REDIS_HOST }
+      port: 6379
